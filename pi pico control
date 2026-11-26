@@ -1,1 +1,125 @@
+import sys
+import time
+import board
+import digitalio
+import usb_hid
+import supervisor
+from adafruit_hid.keyboard import Keyboard
+from adafruit_hid.keycode import Keycode
 
+# Inicializa a emulação de teclado USB HID
+kbd = Keyboard(usb_hid.devices)
+
+# ==============================================================================
+# CONFIGURAÇÃO DOS PERFIS DE TECLAS
+# ==============================================================================
+# Usamos os Keycodes das teclas numéricas da fileira superior (5, 1, 9, 3)
+PROFILES = {
+    "PADRAO": {
+        "UP": Keycode.UP_ARROW,
+        "DOWN": Keycode.DOWN_ARROW,
+        "LEFT": Keycode.LEFT_ARROW,
+        "RIGHT": Keycode.RIGHT_ARROW,
+        "CREDITO": Keycode.FIVE,    # Tecla 5 superior
+        "START": Keycode.ONE,       # Tecla 1 superior
+        "MENU": Keycode.NINE,       # Tecla 9 superior
+        "SAIR": Keycode.THREE,      # Tecla 3 superior
+    },
+    "SUBWAY": {
+        "UP": Keycode.UP_ARROW,
+        "DOWN": Keycode.DOWN_ARROW,
+        "LEFT": Keycode.LEFT_ARROW,
+        "RIGHT": Keycode.RIGHT_ARROW,
+        "CREDITO": Keycode.FIVE,    # Tecla 5 superior
+        "START": Keycode.ENTER,     # Tecla Enter
+        "MENU": Keycode.NINE,       # Tecla 9 superior
+        "SAIR": Keycode.THREE,      # Tecla 3 superior
+    },
+    "SONIC": {
+        "UP": Keycode.UP_ARROW,
+        "DOWN": Keycode.DOWN_ARROW,
+        "LEFT": Keycode.LEFT_ARROW,
+        "RIGHT": Keycode.RIGHT_ARROW,
+        "CREDITO": Keycode.FIVE,    # Tecla 5 superior
+        "START": Keycode.SPACE,     # Tecla Espaço
+        "MENU": Keycode.NINE,       # Tecla 9 superior
+        "SAIR": Keycode.THREE,      # Tecla 3 superior
+    }
+}
+
+# Mapeamento do nome de pacote do Android para cada Perfil
+PACKAGE_MAP = {
+    "com.LocalArcade.SubwaySurfersArcade3": "SUBWAY",
+    "VJGames.Sonic_Dash_2.com": "SONIC"
+}
+
+# Perfil inicial ao ligar
+current_profile = PROFILES["PADRAO"]
+
+# ==============================================================================
+# MAPEAMENTO DOS PINOS GPIO DA PI PICO
+# ==============================================================================
+# Altere os pinos GPXX abaixo de acordo com a fiação do seu painel/placa
+PIN_MAP = {
+    "UP": board.GP16,
+    "DOWN": board.GP17,
+    "LEFT": board.GP18,
+    "RIGHT": board.GP19,
+    "CREDITO": board.GP14,
+    "START": board.GP15,
+    "MENU": board.GP20,
+    "SAIR": board.GP21,
+}
+
+# Configuração dos pinos com resistor Pull-Up interno (GND ativa o botão)
+inputs = {}
+last_state = {}
+
+for action, pin in PIN_MAP.items():
+    io = digitalio.DigitalInOut(pin)
+    io.direction = digitalio.Direction.INPUT
+    io.pull = digitalio.Pull.UP
+    inputs[action] = io
+    last_state[action] = True  # True = Solto (Pull-Up)
+
+# ==============================================================================
+# LOOP PRINCIPAL
+# ==============================================================================
+while True:
+    # 1. Leitura de comandos vindos do Frontend Android via Serial USB
+    if supervisor.runtime.serial_bytes_available:
+        cmd = sys.stdin.readline().strip()
+        
+        # Pode receber o pacote completo (ex: com.LocalArcade.SubwaySurfersArcade3)
+        # ou o nome direto do perfil (SUBWAY, SONIC, PADRAO)
+        if cmd in PACKAGE_MAP:
+            profile_key = PACKAGE_MAP[cmd]
+            current_profile = PROFILES[profile_key]
+            print(f"OK: Alterado para {profile_key} via pacote Android")
+        elif cmd in PROFILES:
+            current_profile = PROFILES[cmd]
+            print(f"OK: Alterado para {cmd}")
+        else:
+            # Qualquer outro jogo não listado volta automaticamente ao PADRAO
+            current_profile = PROFILES["PADRAO"]
+            print("OK: Jogo padrão/menu ativado (PADRAO)")
+
+    # 2. Leitura dos botões e envio de comandos de Teclado
+    for action, io in inputs.items():
+        is_pressed = not io.value  # LOW (0V) = Pressionado
+
+        # Borda de descida (Pressionou o botão)
+        if is_pressed and last_state[action]:
+            key = current_profile.get(action)
+            if key:
+                kbd.press(key)
+            last_state[action] = False
+
+        # Borda de subida (Soltou o botão)
+        elif not is_pressed and not last_state[action]:
+            key = current_profile.get(action)
+            if key:
+                kbd.release(key)
+            last_state[action] = True
+
+    time.sleep(0.005)  # Pequeno atraso para debounce
