@@ -43,3 +43,5 @@ O sistema lê a lista de jogos e mídias a partir da pasta configurada no armaze
 
 Desenvolvido e mantido por **Caos Gamer**  
 *Sistemas VERTICAOS & MULTICAOS — Soluções para Fliperamas e Multijogos*
+<img width="1080" height="1920" alt="image" src="https://github.com/user-attachments/assets/731979ba-5dfd-4d2a-ad96-f107152cf75d" />
+
